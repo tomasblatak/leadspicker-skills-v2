@@ -17,7 +17,7 @@ Orchestrates data preparation and enrichment for contacts in Leadspicker project
 
 ### 2. AI Classifier (`leadspicker-classifier`)
 
-Creates AI-powered classification columns (magic columns) using GPT-4o-Mini. Supports boolean, string, and scored classification modes with smart variable selection.
+Creates AI-powered classification columns (magic columns) using GPT-realtime. Supports boolean, string, and scored classification modes with smart variable selection.
 
 **Capabilities:**
 - Company classification (e.g., "Is this a SaaS company?")
