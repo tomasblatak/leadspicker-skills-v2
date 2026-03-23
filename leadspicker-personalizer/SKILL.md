@@ -16,7 +16,7 @@ description: >
 # Leadspicker Personalizer
 
 Generates short personalization fragments for cold email campaigns in Leadspicker projects
-via the magic-columns API. Each column runs gpt-realtime on every contact to produce a brief,
+via the magic-columns API. Each column runs GPT-5.4-Mini on every contact to produce a brief,
 natural sentence fragment or grammar-correct salutation.
 
 This skill is a companion to `leadspicker-data-enrichment` (provides the input data) and
@@ -31,7 +31,7 @@ personalization prompts.
 **Leadspicker never generates full messages — only short parts.**
 
 Every personalization output is a short sentence fragment (typically **14-16 words**). This keeps
-gpt-realtime focused, reduces hallucination, and gives the user full control over the
+GPT-5.4-Mini focused, reduces hallucination, and gives the user full control over the
 final message structure. The exact word limit can be adjusted per request.
 
 Examples of what this skill produces:
@@ -1044,4 +1044,4 @@ Preview the first column to verify quality, then launch all after approval.
 - **Never log or display** the full API key — confirm only the last 6 characters
 - Use the API key only for Leadspicker API calls, never send it elsewhere
 - Before calling the API, **always show the prompt to the user** for approval
-- Write all prompts in English for best gpt-realtime performance (add language output instruction at the end)
+- Write all prompts in English for best GPT-5.4-Mini performance (add language output instruction at the end)

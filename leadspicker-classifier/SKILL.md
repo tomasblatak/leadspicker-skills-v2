@@ -15,7 +15,7 @@ description: >
 # Leadspicker AI Classifier
 
 Creates AI-powered magic columns in Leadspicker projects via the magic-columns API.
-Each column runs gpt-realtime on every contact in the project to classify, categorize,
+Each column runs GPT-5.4-Mini on every contact in the project to classify, categorize,
 clean, or generate personalized content.
 
 This skill is a companion to `leadspicker-data-enrichment` — it uses the enriched data
@@ -43,7 +43,7 @@ classification goal (e.g., "Is SaaS Company", "Industry", "Relevant Decision Mak
 ## System Prompt (Fixed — Do Not Modify)
 
 Every AI column in Leadspicker is wrapped by a fixed system prompt that you **cannot change**.
-The system prompt forces gpt-realtime to output strict JSON. Understanding this is critical
+The system prompt forces GPT-5.4-Mini to output strict JSON. Understanding this is critical
 for writing effective user prompts.
 
 **Boolean mode** (`is_boolean: true`):
@@ -57,12 +57,12 @@ System forces output: {"result": "response"}
 ```
 
 **What this means for your prompts:**
-- NEVER ask gpt-realtime to output `yes/no`, `classification: yes/no`, or any custom format
+- NEVER ask GPT-5.4-Mini to output `yes/no`, `classification: yes/no`, or any custom format
 - NEVER include output format instructions — the system prompt handles that
 - Just describe the task, the criteria, and provide the input variables
 - The system prompt will force the correct JSON structure automatically
-- For boolean: gpt-realtime returns `yes`/`no` with a message
-- For string: gpt-realtime returns a text value in the `result` field
+- For boolean: GPT-5.4-Mini returns `yes`/`no` with a message
+- For string: GPT-5.4-Mini returns a text value in the `result` field
 
 ---
 
@@ -113,7 +113,7 @@ Complex yes/no decisions where confidence and reasoning matter → string with s
 ## Smart Variable Selection
 
 Pick only the variables relevant to the classification. Do not dump all variables into
-every prompt — keep it lean so gpt-realtime focuses on what matters.
+every prompt — keep it lean so GPT-5.4-Mini focuses on what matters.
 
 ### Company Classification
 
@@ -176,7 +176,7 @@ Input:
 
 ---
 
-## Prompt Writing Guidelines for gpt-realtime
+## Prompt Writing Guidelines for GPT-5.4-Mini
 
 ### Structure
 
@@ -190,7 +190,7 @@ Every prompt should follow this pattern:
 
 ### Best Practices
 
-- **Be direct and specific.** gpt-realtime performs best with clear, unambiguous instructions.
+- **Be direct and specific.** GPT-5.4-Mini performs best with clear, unambiguous instructions.
   Bad: "Try to figure out what kind of company this is."
   Good: "Determine the primary industry of the company."
 
@@ -199,7 +199,7 @@ Every prompt should follow this pattern:
   Example: "A SaaS company sells software via cloud on subscription. Do NOT classify as SaaS:
   agencies, consultancies, e-commerce, hardware companies."
 
-- **Keep prompts concise.** gpt-realtime works well with shorter prompts. Avoid unnecessary
+- **Keep prompts concise.** GPT-5.4-Mini works well with shorter prompts. Avoid unnecessary
   preamble or over-explanation. Aim for 50-150 words.
 
 - **Use simple language.** Avoid complex sentence structures. Short sentences, clear logic.
@@ -222,7 +222,7 @@ Every prompt should follow this pattern:
 - Do NOT write multi-step instructions with numbered output fields
 - Do NOT include JSON examples in the prompt — the system prompt already enforces JSON
 - Do NOT use the phrase "Respond in this exact format" — format is controlled by the system
-- Do NOT write prompts in Czech — always write in English (gpt-realtime performs best in English)
+- Do NOT write prompts in Czech — always write in English (GPT-5.4-Mini performs best in English)
 
 ---
 
@@ -830,4 +830,4 @@ Users won't always use technical terms. Here's how to interpret common requests:
 - **Never log or display** the full API key — confirm only the last 6 characters
 - Use the API key only for Leadspicker API calls, never send it elsewhere
 - Before calling the API, **always show the prompt to the user** for approval
-- Write all prompts in English for best gpt-realtime performance
+- Write all prompts in English for best GPT-5.4-Mini performance

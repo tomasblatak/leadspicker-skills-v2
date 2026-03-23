@@ -543,10 +543,40 @@ email1 = create_step({
 
 **Step 2: Add email and LinkedIn steps**
 
-Execute the rest of the sequence following the outreach skill's API structure:
+Execute the rest of the sequence following the outreach skill's multi-channel structure.
+
+**⚠️ MANDATORY: For ANY multi-channel sequence, ALWAYS use `first_degree_connection` check before LinkedIn steps.**
+
+The multi-channel sequence MUST follow this branching structure after condition gates:
+
+```
+EMAIL 1 (is_reply=false)
+  → DELAY 3d
+    → FIRST_DEGREE_CONNECTION (check if already connected)
+      ├── YES (already connected):
+      │   → LI MSG (direct message)
+      │     → DELAY 3d → EMAIL 2 → DELAY 5d → EMAIL 3
+      │
+      └── NO (not connected):
+          → CONNECT (send connection request)
+            → AFTER_CONNECTION (wait 7d for acceptance)
+              ├── YES (accepted):
+              │   → LI MSG (message after acceptance)
+              │     → DELAY 3d → EMAIL 2 → DELAY 5d → EMAIL 3
+              │
+              └── NO (not accepted):
+                  → INMAIL (premium only) or EMAIL fallback
+                    → DELAY 3d → EMAIL 2 → DELAY 5d → EMAIL 3
+```
+
+**Key rules:**
+- `first_degree_connection` is a BRANCHING step — it only supports `yes` and `no` children, NOT default `""` children
+- Each branch (YES connected, YES accepted, NO not accepted) must have its own copy of the follow-up email chain (Email 2, delays, Email 3)
 - Chain steps via `parent_relation`
 - Use correct `outreach_step_type` values (empty string for email, "delay", "first_degree_connection", "connect", "after_connection", "message", "inmail_message")
-- Set correct positions for visual layout
+- Set correct positions for visual layout — use different x coordinates for branches
+
+**NEVER skip the `first_degree_connection` check in multi-channel sequences.** Without it, you risk sending connection requests to people who are already connected, which looks unprofessional.
 
 ### Verify
 

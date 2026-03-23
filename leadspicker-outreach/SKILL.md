@@ -462,6 +462,12 @@ Before adding an `inmail_message` step, **always ask the user** if they have Lin
 
 ## Sequence Type 3: Multi-Channel (Email + LinkedIn)
 
+### ⚠️ MANDATORY: Always Check 1st Degree Connection
+
+**NEVER skip `first_degree_connection` in multi-channel sequences.** This step MUST come before any LinkedIn connect/message steps. Without it, you risk sending connection requests to people who are already connected, which looks unprofessional and wastes LinkedIn actions.
+
+**Also note:** `first_degree_connection` is a BRANCHING step — it ONLY supports `yes` and `no` children. You CANNOT attach a default `""` relation child to it. Each branch (YES/NO) must contain its own complete follow-up chain (including email follow-ups).
+
 ### Structure
 
 ```
