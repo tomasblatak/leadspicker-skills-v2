@@ -10,7 +10,7 @@ description: >
 
 ## Overview
 
-This skill creates outreach sequences (email, LinkedIn, or multi-channel) for Leadspicker projects via the Sequence API. Sequences are built step-by-step, where each step chains to the previous one via `parent_relation`.
+This skill creates outreach sequences (email, LinkedIn, or multi-channel) for Leadspicker projects via the Sequence API. An entire sequence is created in a single API call using `POST /projects/{project_id}/sequence`.
 
 **Three sequence types:**
 1. **Email Sequence** — cold email with follow-ups in the same thread
@@ -26,7 +26,7 @@ This skill creates outreach sequences (email, LinkedIn, or multi-channel) for Le
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/sequence?force_save=true` | POST | Create a sequence step |
+| `/projects/{id}/sequence?force_save=true` | POST | **Create entire sequence in one call** |
 | `/sequence?project_id={id}` | GET | List all steps in a sequence |
 | `/projects/{id}/sequence` | DELETE | Delete entire sequence |
 
@@ -45,117 +45,39 @@ This skill creates outreach sequences (email, LinkedIn, or multi-channel) for Le
 
 ### Boolean Condition Gate (magic_column_condition)
 
-**Always add this as the FIRST step (root) of every sequence** when boolean classification columns exist in the project (e.g., "Is Relevant Position", "Is Relevant Company", "Is Target Size", "Is Target Country").
+Add conditions as the first steps when boolean classification columns exist in the project. Conditions can also be placed mid-sequence. Each condition is a separate step with one `condition` array containing a single header ID.
 
-This step filters contacts — only those where ALL specified boolean columns are `true` will proceed through the sequence. Contacts that don't match are skipped entirely.
-
-**IMPORTANT: Each condition is a SEPARATE step with ONE precondition. Multiple conditions are chained together, each connected via `relation_type: "yes"`.**
-
-**Step payload (one condition):**
+**Chaining conditions in batch payload:**
 ```json
-{
-  "project_id": {project_id},
+"check-icp": {
   "outreach_step_type": "magic_column_condition",
-  "is_reply": true,
-  "subject": "",
-  "message": "",
-  "preconditions": [{column_header_id}],
-  "position": {"x": 220, "y": 180}
+  "condition": [387407]
+},
+"check-company": {
+  "outreach_step_type": "magic_column_condition",
+  "condition": [387411],
+  "parents": [{"parent": "check-icp", "relation_type": "yes"}]
 }
 ```
 
-**Chaining multiple conditions:**
-```
-Condition 1 (root, no parent) → preconditions: [id_1]
-  → [YES] Condition 2 → preconditions: [id_2]
-    → [YES] Condition 3 → preconditions: [id_3]
-      → [YES] Email 1 → rest of sequence
-```
-
-Each subsequent condition uses `parent_relation: {"parent": previous_condition_id, "relation_type": "yes"}`.
-
-**Example with 3 boolean columns:**
-```python
-# Step 1: First condition (root)
-c1 = create_step({
-    "outreach_step_type": "magic_column_condition",
-    "preconditions": [380903],  # Is Relevant Position
-    "position": {"x": 220, "y": 180}
-})
-
-# Step 2: Second condition (chained from C1)
-c2 = create_step({
-    "outreach_step_type": "magic_column_condition",
-    "preconditions": [380901],  # Is Relevant Company
-    "parent_relation": {"parent": c1, "relation_type": "yes"},
-    "position": {"x": 220, "y": 350}
-})
-
-# Step 3: Third condition (chained from C2)
-c3 = create_step({
-    "outreach_step_type": "magic_column_condition",
-    "preconditions": [380904],  # Is Target Size
-    "parent_relation": {"parent": c2, "relation_type": "yes"},
-    "position": {"x": 220, "y": 520}
-})
-
-# Step 4: First email (chained from C3 YES)
-email1 = create_step({
-    "outreach_step_type": "",
-    "parent_relation": {"parent": c3, "relation_type": "yes"},
-    ...
-})
-```
-
-**Key fields:**
-- `preconditions`: Array with exactly **ONE integer column header ID** per step
-- Each condition connects to the next via `parent_relation` with `relation_type: "yes"`
-- The first condition is the root step (no `parent_relation`)
-- The last condition's YES branch connects to the first email/message step
-
 **How to find column header IDs:**
-1. Fetch the project details: `GET /projects/{project_id}`
-2. Look in the `headers_data` array for boolean columns (`is_boolean: true`)
-3. Use the `id` field from each matching header
+1. Fetch: `GET /projects/{project_id}`
+2. Look in `headers_data` for entries where `is_boolean: true`
+3. Use the `id` field
 
-```python
-resp = requests.get(f"{BASE_URL}/projects/{project_id}", headers=HEADERS)
-project = resp.json()
-boolean_columns = [
-    {"id": h["id"], "name": h["column_name"]}
-    for h in project["headers_data"]
-    if h.get("is_boolean") and h["id"] is not None
-]
-```
+### Parent References (Batch Endpoint)
 
-**Which columns to include:**
-All boolean filter columns created during classification. Typical columns:
-- `Is Relevant Position` — position matches target persona
-- `Is Relevant Company` — company matches target industry
-- `Is Target Size` — company size within range
-- `Is Target Country` — location matches target geography
-
-### Parent Relation (Step Chaining)
-
-Every step after the root must have `parent_relation`:
+In the batch endpoint, steps reference parents by named string keys or existing numeric IDs:
 
 ```json
-"parent_relation": {"parent": step_id, "relation_type": ""}
+"parents": ["delay-step"]                                      // simple chain
+"parents": [{"parent": "wait-accept", "relation_type": "yes"}] // YES branch
+"parents": [{"parent": 4567, "relation_type": ""}]             // existing step ID
 ```
 
-- Field is `parent` — **NOT** `parent_id`
-- `relation_type` values:
-  - `""` — default/sequential flow
-  - `"yes"` — positive branch (connected / accepted)
-  - `"no"` — negative branch (not connected / not accepted)
-
-### Position (Visual Layout)
-
-```json
-"position": {"x": 220, "y": 180}
-```
-
-Visual coordinates in the sequence builder UI. Increment `y` by ~160-170 for each subsequent step. Use different `x` values for branches (e.g., YES branch at x=60, NO branch at x=380).
+- `relation_type`: `""` (sequential), `"yes"` (positive branch), `"no"` (negative branch)
+- Root steps have no `parents` field
+- Position is auto-calculated — no need to set coordinates
 
 ---
 
@@ -171,77 +93,46 @@ EMAIL 1 (root, is_reply=false) — new thread
         → EMAIL 3 (is_reply=true) — same thread
 ```
 
-### Step-by-Step API Calls
+### Batch API Call
 
-**Step 1: First Email (root)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "",
-  "subject": "{subject_line}",
-  "message": "<div>{email_body_html}</div>",
-  "is_reply": false,
-  "position": {"x": 220, "y": 180}
-}
+```bash
+POST /projects/{project_id}/sequence?force_save=true
 ```
 
-**Step 2: Delay**
 ```json
-POST /sequence?force_save=true
-
 {
-  "project_id": {project_id},
-  "outreach_step_type": "delay",
-  "delay_days": 3,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step1_id}, "relation_type": ""},
-  "position": {"x": 220, "y": 350}
-}
-```
-
-**Step 3: Follow-up Email (same thread)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "",
-  "subject": "",
-  "message": "<div>{follow_up_body_html}</div>",
-  "is_reply": true,
-  "parent_relation": {"parent": {step2_id}, "relation_type": ""},
-  "position": {"x": 220, "y": 520}
-}
-```
-
-**Step 4: Delay**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "delay",
-  "delay_days": 3,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step3_id}, "relation_type": ""},
-  "position": {"x": 220, "y": 690}
-}
-```
-
-**Step 5: Final Follow-up Email (same thread)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "",
-  "subject": "",
-  "message": "<div>{final_follow_up_body_html}</div>",
-  "is_reply": true,
-  "parent_relation": {"parent": {step4_id}, "relation_type": ""},
-  "position": {"x": 220, "y": 860}
+  "sequence_messages": {
+    "email-1": {
+      "subject": "{subject_line}",
+      "message": "<div>{email_body_html}</div>",
+      "outreach_step_type": "",
+      "is_reply": false
+    },
+    "delay-1": {
+      "outreach_step_type": "delay",
+      "delay_days": 3,
+      "parents": ["email-1"]
+    },
+    "email-2": {
+      "subject": "Re: {subject_line}",
+      "message": "<div>{follow_up_body_html}</div>",
+      "outreach_step_type": "",
+      "is_reply": true,
+      "parents": ["delay-1"]
+    },
+    "delay-2": {
+      "outreach_step_type": "delay",
+      "delay_days": 3,
+      "parents": ["email-2"]
+    },
+    "email-3": {
+      "subject": "Re: {subject_line}",
+      "message": "<div>{final_follow_up_body_html}</div>",
+      "outreach_step_type": "",
+      "is_reply": true,
+      "parents": ["delay-2"]
+    }
+  }
 }
 ```
 
@@ -250,8 +141,8 @@ POST /sequence?force_save=true
 | Field | Value | Notes |
 |-------|-------|-------|
 | `outreach_step_type` | `""` | Empty string for email |
-| `subject` | `"Subject line"` | Only on first email (`is_reply: false`) |
-| `message` | `"<div>HTML</div>"` | HTML format — same field as LinkedIn, but uses HTML for emails |
+| `subject` | `"Subject line"` | First email: original subject. Follow-ups: `"Re: {subject}"` |
+| `message` | `"<div>HTML</div>"` | HTML format |
 | `is_reply` | `false` / `true` | `false` = new thread, `true` = same thread |
 
 ---
@@ -261,187 +152,65 @@ POST /sequence?force_save=true
 ### Structure
 
 ```
-FIRST_DEGREE_CONNECTION (root) — check if already connected
-├── YES (already connected):
-│   ├── MESSAGE 1 (DM)
-│   ├── DELAY
-│   └── MESSAGE 2 (follow-up DM)
-│
-└── NO (not connected):
-    ├── CONNECT (send connection request)
-    ├── AFTER_CONNECTION (wait up to 7 days for acceptance)
+CONNECT (root) — send connection request
+  → AFTER_CONNECTION (wait up to 7 days)
     ├── YES (accepted):
-    │   ├── MESSAGE 1 (DM)
-    │   ├── DELAY
-    │   └── MESSAGE 2 (follow-up DM)
+    │   → MESSAGE 1 → DELAY → MESSAGE 2
     └── NO (not accepted):
-        └── INMAIL_MESSAGE (premium only)
+        → INMAIL (premium only) → DELAY → INMAIL 2
 ```
 
-### Step-by-Step API Calls
+### Batch API Call
 
-**Step 1: Check 1st Degree Connection (root)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "first_degree_connection",
-  "is_reply": true,
-  "subject": "",
-  "message": "",
-  "position": {"x": 220, "y": 180}
-}
+```bash
+POST /projects/{project_id}/sequence?force_save=true
 ```
 
-#### YES Branch (Already Connected)
-
-**Step 2: LinkedIn Message (YES branch)**
 ```json
-POST /sequence?force_save=true
-
 {
-  "project_id": {project_id},
-  "outreach_step_type": "message",
-  "is_reply": true,
-  "subject": "{message_subject}",
-  "message": "{message_body}",
-  "delay_days": 1,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step1_id}, "relation_type": "yes"},
-  "position": {"x": 60, "y": 370}
-}
-```
-
-**Step 3: Delay (YES branch)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "delay",
-  "delay_days": 3,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step2_id}, "relation_type": ""},
-  "position": {"x": 60, "y": 530}
-}
-```
-
-**Step 4: Follow-up Message (YES branch)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "message",
-  "is_reply": true,
-  "subject": "{follow_up_subject}",
-  "message": "{follow_up_body}",
-  "delay_days": 1,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step3_id}, "relation_type": ""},
-  "position": {"x": 60, "y": 690}
-}
-```
-
-#### NO Branch (Not Connected)
-
-**Step 5: Send Connection Request (NO branch)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "connect",
-  "is_reply": true,
-  "subject": "LinkedIn connection request",
-  "message": "",
-  "delay_days": 1,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step1_id}, "relation_type": "no"},
-  "position": {"x": 380, "y": 370}
-}
-```
-
-**Step 6: Wait for Connection Acceptance**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "after_connection",
-  "is_reply": true,
-  "subject": "",
-  "message": "",
-  "delay_days": 7,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step5_id}, "relation_type": ""},
-  "position": {"x": 380, "y": 560}
-}
-```
-
-**Step 7: Message After Acceptance (YES)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "message",
-  "is_reply": true,
-  "subject": "{message_subject}",
-  "message": "{message_body}",
-  "delay_days": 1,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step6_id}, "relation_type": "yes"},
-  "position": {"x": 280, "y": 750}
-}
-```
-
-**Step 8: Delay After Acceptance**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "delay",
-  "delay_days": 2,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step7_id}, "relation_type": ""},
-  "position": {"x": 280, "y": 910}
-}
-```
-
-**Step 9: Final Follow-up Message**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "message",
-  "is_reply": true,
-  "subject": "{final_subject}",
-  "message": "{final_body}",
-  "delay_days": 1,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step8_id}, "relation_type": ""},
-  "position": {"x": 280, "y": 1070}
-}
-```
-
-**Step 10: InMail (Connection NOT Accepted — NO)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "inmail_message",
-  "is_reply": true,
-  "subject": "{inmail_subject}",
-  "message": "{inmail_body}",
-  "delay_days": 1,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step6_id}, "relation_type": "no"},
-  "position": {"x": 500, "y": 750}
+  "sequence_messages": {
+    "connect": {
+      "message": "{connection_request_text}",
+      "outreach_step_type": "connect"
+    },
+    "wait-accept": {
+      "outreach_step_type": "after_connection",
+      "delay_days": 7,
+      "parents": ["connect"]
+    },
+    "accepted-msg-1": {
+      "message": "{message_body_1}",
+      "outreach_step_type": "message",
+      "parents": [{"parent": "wait-accept", "relation_type": "yes"}]
+    },
+    "accepted-delay": {
+      "outreach_step_type": "delay",
+      "delay_days": 5,
+      "parents": ["accepted-msg-1"]
+    },
+    "accepted-msg-2": {
+      "message": "{follow_up_body}",
+      "outreach_step_type": "message",
+      "parents": ["accepted-delay"]
+    },
+    "not-accepted-inmail-1": {
+      "subject": "{inmail_subject}",
+      "message": "{inmail_body}",
+      "outreach_step_type": "inmail_message",
+      "parents": [{"parent": "wait-accept", "relation_type": "no"}]
+    },
+    "not-accepted-delay": {
+      "outreach_step_type": "delay",
+      "delay_days": 5,
+      "parents": ["not-accepted-inmail-1"]
+    },
+    "not-accepted-inmail-2": {
+      "subject": "{inmail_subject_2}",
+      "message": "{inmail_follow_up_body}",
+      "outreach_step_type": "inmail_message",
+      "parents": ["not-accepted-delay"]
+    }
+  }
 }
 ```
 
@@ -450,13 +219,11 @@ POST /sequence?force_save=true
 | Field | Value | Notes |
 |-------|-------|-------|
 | `message` | `"text"` | LinkedIn message body (plain text, not HTML) |
-| `subject` | `"text"` | Message subject line |
-| `delay_days` | `1` | Minimum delay before sending (on message steps) |
-| `delay_hours` | `0` | Additional hours delay |
+| `subject` | `"text"` | Subject line (required for InMail) |
 
 ### InMail — Premium Only
 
-Before adding an `inmail_message` step, **always ask the user** if they have LinkedIn Premium. Non-premium users cannot send InMails. If the user is not premium, skip the InMail step entirely.
+Before adding `inmail_message` steps, **always ask the user** if they have LinkedIn Premium. Non-premium: skip InMail steps entirely.
 
 ---
 
@@ -464,359 +231,134 @@ Before adding an `inmail_message` step, **always ask the user** if they have Lin
 
 ### ⚠️ MANDATORY: Always Check 1st Degree Connection
 
-**NEVER skip `first_degree_connection` in multi-channel sequences.** This step MUST come before any LinkedIn connect/message steps. Without it, you risk sending connection requests to people who are already connected, which looks unprofessional and wastes LinkedIn actions.
-
-**Also note:** `first_degree_connection` is a BRANCHING step — it ONLY supports `yes` and `no` children. You CANNOT attach a default `""` relation child to it. Each branch (YES/NO) must contain its own complete follow-up chain (including email follow-ups).
+**NEVER skip `first_degree_connection` in multi-channel sequences.** This step MUST come before any LinkedIn connect/message steps.
 
 ### Structure
 
 ```
-CONDITION GATE (root) — checks all boolean columns, only matching contacts proceed
-  → [YES] EMAIL 1 (is_reply=false) — new thread
-    → DELAY (3 days)
-    → FIRST_DEGREE_CONNECTION — check if already connected
+CONDITIONS (optional) — filter contacts by boolean columns
+  → EMAIL 1 → DELAY → FOLLOW-UP EMAIL → DELAY
+    → FIRST_DEGREE_CONNECTION
       ├── YES (already connected):
-      │   → MESSAGE 1 (DM)
-      │     → DELAY (3 days)
-      │       → MESSAGE 2 (follow-up DM)
-      │         → DELAY (3 days)
-      │           → EMAIL fallback (is_reply=true, same thread)
-      │
+      │   → MESSAGE 1 → DELAY → MESSAGE 2
       └── NO (not connected):
-          → CONNECT (send connection request)
-            → AFTER_CONNECTION (wait up to 7 days)
-              ├── YES (accepted):
-              │   → MESSAGE 1 (DM)
-              │     → DELAY (3 days)
-              │       → MESSAGE 2 (follow-up DM)
-              │         → DELAY (3 days)
-              │           → EMAIL fallback (is_reply=true, same thread)
-              │
-              └── NO (not accepted):
-                  → INMAIL_MESSAGE (optional, premium only)
-                    → DELAY (3 days)
-                      → EMAIL fallback (is_reply=true, same thread)
-```
-
-**Without LinkedIn Premium (no InMail):** The NO-not-accepted branch skips InMail and goes directly to the email fallback:
-```
-              └── NO (not accepted):
-                  → EMAIL fallback (is_reply=true, same thread)
+          → CONNECT → AFTER_CONNECTION (7 days)
+            ├── YES (accepted):
+            │   → MESSAGE 1 → DELAY → MESSAGE 2
+            └── NO (not accepted):
+                → INMAIL (premium) → DELAY → FINAL EMAIL
 ```
 
 ### ⚠️ InMail is Optional — Ask About LinkedIn Premium
 
-Before building a multi-channel sequence, **always ask the user** if they have LinkedIn Premium:
-- **Premium user** → include InMail step in the NO-not-accepted branch (18 steps total)
-- **Non-premium user** → skip InMail, email fallback connects directly to `after_connection` NO branch (16 steps total)
+- **Premium** → include InMail in NO-not-accepted branch
+- **Non-premium** → skip InMail, use final email directly
 
-### Step-by-Step API Calls (With InMail — 18 Steps)
+### Batch API Call (With Conditions + InMail — 18 Steps)
 
-#### Email Phase (1 email → delay)
-
-**Step 1: First Email (root)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "",
-  "subject": "{subject_line}",
-  "message": "<div>{email_body_html}</div>",
-  "is_reply": false,
-  "position": {"x": 220, "y": 180}
-}
+```bash
+POST /projects/{project_id}/sequence?force_save=true
 ```
 
-**Step 2: Delay (3 days)**
 ```json
-POST /sequence?force_save=true
-
 {
-  "project_id": {project_id},
-  "outreach_step_type": "delay",
-  "delay_days": 3,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step1_id}, "relation_type": ""},
-  "position": {"x": 220, "y": 350}
-}
-```
-
-#### LinkedIn Phase — Connection Check
-
-**Step 3: Check 1st Degree Connection**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "first_degree_connection",
-  "is_reply": true,
-  "subject": "",
-  "message": "",
-  "parent_relation": {"parent": {step2_id}, "relation_type": ""},
-  "position": {"x": 220, "y": 520}
-}
-```
-
-#### YES Branch — Already Connected (x=60)
-
-**Step 4: LinkedIn Message 1 (YES branch)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "message",
-  "is_reply": true,
-  "subject": "{message_subject}",
-  "message": "{message_body}",
-  "delay_days": 1,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step3_id}, "relation_type": "yes"},
-  "position": {"x": 60, "y": 690}
-}
-```
-
-**Step 5: Delay (3 days)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "delay",
-  "delay_days": 3,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step4_id}, "relation_type": ""},
-  "position": {"x": 60, "y": 860}
-}
-```
-
-**Step 6: LinkedIn Message 2 (follow-up)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "message",
-  "is_reply": true,
-  "subject": "{follow_up_subject}",
-  "message": "{follow_up_body}",
-  "delay_days": 1,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step5_id}, "relation_type": ""},
-  "position": {"x": 60, "y": 1030}
-}
-```
-
-**Step 7: Delay (3 days)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "delay",
-  "delay_days": 3,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step6_id}, "relation_type": ""},
-  "position": {"x": 60, "y": 1200}
-}
-```
-
-**Step 8: Email Fallback (same thread as Step 1)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "",
-  "subject": "",
-  "message": "<div>{email_fallback_body_html}</div>",
-  "is_reply": true,
-  "parent_relation": {"parent": {step7_id}, "relation_type": ""},
-  "position": {"x": 60, "y": 1370}
-}
-```
-
-#### NO Branch — Not Connected (x=380)
-
-**Step 9: Send Connection Request (NO branch)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "connect",
-  "is_reply": true,
-  "subject": "LinkedIn connection request",
-  "message": "",
-  "delay_days": 1,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step3_id}, "relation_type": "no"},
-  "position": {"x": 380, "y": 690}
-}
-```
-
-**Step 10: Wait for Connection Acceptance (up to 7 days)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "after_connection",
-  "is_reply": true,
-  "subject": "",
-  "message": "",
-  "delay_days": 7,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step9_id}, "relation_type": ""},
-  "position": {"x": 380, "y": 860}
-}
-```
-
-#### NO-YES Branch — Connection Accepted (x=280)
-
-**Step 11: LinkedIn Message 1 (after acceptance)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "message",
-  "is_reply": true,
-  "subject": "{message_subject}",
-  "message": "{message_body}",
-  "delay_days": 1,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step10_id}, "relation_type": "yes"},
-  "position": {"x": 280, "y": 1030}
-}
-```
-
-**Step 12: Delay (3 days)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "delay",
-  "delay_days": 3,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step11_id}, "relation_type": ""},
-  "position": {"x": 280, "y": 1200}
-}
-```
-
-**Step 13: LinkedIn Message 2 (follow-up)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "message",
-  "is_reply": true,
-  "subject": "{follow_up_subject}",
-  "message": "{follow_up_body}",
-  "delay_days": 1,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step12_id}, "relation_type": ""},
-  "position": {"x": 280, "y": 1370}
-}
-```
-
-**Step 14: Delay (3 days)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "delay",
-  "delay_days": 3,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step13_id}, "relation_type": ""},
-  "position": {"x": 280, "y": 1540}
-}
-```
-
-**Step 15: Email Fallback (same thread as Step 1)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "",
-  "subject": "",
-  "message": "<div>{email_fallback_body_html}</div>",
-  "is_reply": true,
-  "parent_relation": {"parent": {step14_id}, "relation_type": ""},
-  "position": {"x": 280, "y": 1710}
-}
-```
-
-#### NO-NO Branch — Connection NOT Accepted (x=500)
-
-**⚠️ Steps 16-17 are OPTIONAL — only include if user has LinkedIn Premium**
-
-**Step 16: InMail (optional, premium only)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "inmail_message",
-  "is_reply": true,
-  "subject": "{inmail_subject}",
-  "message": "{inmail_body}",
-  "delay_days": 1,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step10_id}, "relation_type": "no"},
-  "position": {"x": 500, "y": 1030}
-}
-```
-
-**Step 17: Delay (3 days) (optional, only with InMail)**
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "delay",
-  "delay_days": 3,
-  "delay_hours": 0,
-  "parent_relation": {"parent": {step16_id}, "relation_type": ""},
-  "position": {"x": 500, "y": 1200}
-}
-```
-
-**Step 18: Email Fallback (same thread as Step 1)**
-
-If user has Premium (InMail included):
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "",
-  "subject": "",
-  "message": "<div>{email_fallback_body_html}</div>",
-  "is_reply": true,
-  "parent_relation": {"parent": {step17_id}, "relation_type": ""},
-  "position": {"x": 500, "y": 1370}
-}
-```
-
-If user does NOT have Premium (no InMail — email connects directly to after_connection NO):
-```json
-POST /sequence?force_save=true
-
-{
-  "project_id": {project_id},
-  "outreach_step_type": "",
-  "subject": "",
-  "message": "<div>{email_fallback_body_html}</div>",
-  "is_reply": true,
-  "parent_relation": {"parent": {step10_id}, "relation_type": "no"},
-  "position": {"x": 500, "y": 1030}
+  "sequence_messages": {
+    "check-icp": {
+      "outreach_step_type": "magic_column_condition",
+      "condition": [{boolean_header_id_1}]
+    },
+    "check-language": {
+      "outreach_step_type": "magic_column_condition",
+      "condition": [{boolean_header_id_2}],
+      "parents": [{"parent": "check-icp", "relation_type": "yes"}]
+    },
+    "first-email": {
+      "subject": "{subject_line}",
+      "message": "<div>{email_body_html}</div>",
+      "outreach_step_type": "",
+      "is_reply": false,
+      "parents": [{"parent": "check-language", "relation_type": "yes"}]
+    },
+    "delay-after-email-1": {
+      "outreach_step_type": "delay",
+      "delay_days": 3,
+      "parents": ["first-email"]
+    },
+    "followup-email": {
+      "subject": "Re: {subject_line}",
+      "message": "<div>{follow_up_html}</div>",
+      "outreach_step_type": "",
+      "is_reply": true,
+      "parents": ["delay-after-email-1"]
+    },
+    "delay-after-email-2": {
+      "outreach_step_type": "delay",
+      "delay_days": 3,
+      "parents": ["followup-email"]
+    },
+    "check-connected": {
+      "outreach_step_type": "first_degree_connection",
+      "parents": ["delay-after-email-2"]
+    },
+    "already-connected-msg": {
+      "message": "{li_message_for_connected}",
+      "outreach_step_type": "message",
+      "parents": [{"parent": "check-connected", "relation_type": "yes"}]
+    },
+    "already-connected-delay": {
+      "outreach_step_type": "delay",
+      "delay_days": 3,
+      "parents": ["already-connected-msg"]
+    },
+    "already-connected-msg-2": {
+      "message": "{li_followup_for_connected}",
+      "outreach_step_type": "message",
+      "parents": ["already-connected-delay"]
+    },
+    "not-connected-request": {
+      "message": "{connection_request_text}",
+      "outreach_step_type": "connect",
+      "parents": [{"parent": "check-connected", "relation_type": "no"}]
+    },
+    "wait-accept": {
+      "outreach_step_type": "after_connection",
+      "delay_days": 7,
+      "parents": ["not-connected-request"]
+    },
+    "accepted-msg": {
+      "message": "{li_message_after_accept}",
+      "outreach_step_type": "message",
+      "parents": [{"parent": "wait-accept", "relation_type": "yes"}]
+    },
+    "accepted-delay": {
+      "outreach_step_type": "delay",
+      "delay_days": 3,
+      "parents": ["accepted-msg"]
+    },
+    "accepted-msg-2": {
+      "message": "{li_followup_after_accept}",
+      "outreach_step_type": "message",
+      "parents": ["accepted-delay"]
+    },
+    "not-accepted-inmail": {
+      "subject": "{inmail_subject}",
+      "message": "{inmail_body}",
+      "outreach_step_type": "inmail_message",
+      "parents": [{"parent": "wait-accept", "relation_type": "no"}]
+    },
+    "not-accepted-delay": {
+      "outreach_step_type": "delay",
+      "delay_days": 3,
+      "parents": ["not-accepted-inmail"]
+    },
+    "final-email": {
+      "subject": "{final_subject}",
+      "message": "<div>{final_email_html}</div>",
+      "outreach_step_type": "",
+      "is_reply": false,
+      "parents": ["not-accepted-delay"]
+    }
+  }
 }
 ```
 
@@ -824,12 +366,9 @@ POST /sequence?force_save=true
 
 | Aspect | LinkedIn Sequence | Multi-Channel Sequence |
 |--------|------------------|----------------------|
-| Root step | `first_degree_connection` | Email (new thread) |
-| Email phase | None | 1 email → delay before LinkedIn |
-| Terminal steps | Messages / InMail | Email fallback (same thread) on every branch |
-| `is_reply` on fallback emails | N/A | `true` — continues the thread from Step 1 |
-| Total steps (with InMail) | 10 | 18 |
-| Total steps (without InMail) | 9 | 16 |
+| Root step | `connect` | Condition gate or email |
+| Email phase | None | 1-2 emails + delays before LinkedIn |
+| Terminal steps | Messages / InMail | Email fallback on last branch |
 
 ---
 
@@ -1053,11 +592,12 @@ LinkedIn messages use plain text in the `message` field (NOT HTML).
 5. **For LinkedIn or Multi-Channel**: Ask if user has LinkedIn Premium (for InMail step + connection request text). If non-premium, skip InMail and leave connection request blank
 6. **For LinkedIn or Multi-Channel**: Ask for the user's sender name to sign LinkedIn messages (e.g., "What name should I sign the LinkedIn messages with?")
 7. **Fetch available variables**: `GET /projects/{id}/people?page=1&page_size=5` — check all columns including personalization hooks
-8. **Generate messages**: Write all step texts following BASHO framework, word limits, spintax rules, and available variables. For emails: no sender name (auto-signature). For LinkedIn: use the sender name from step 6.
-9. **Show messages to user for approval**: Display all generated texts before building the sequence
-10. **Build sequence**: Execute POST calls step-by-step, chaining via parent_relation, with approved message texts
-11. **Verify**: `GET /sequence?project_id={id}` — show the complete sequence tree
-12. **Confirm with user**: Show the final sequence structure
+8. **Check boolean columns**: `GET /projects/{id}` → `headers_data` where `is_boolean: true`. **If any boolean columns exist, ALWAYS add them as `magic_column_condition` steps at the root of the sequence** (chained via `relation_type: "yes"`). This ensures only qualified contacts enter the outreach flow. Skip this step only if no boolean columns exist in the project.
+9. **Generate messages**: Write all step texts following BASHO framework, word limits, spintax rules, and available variables. For emails: no sender name (auto-signature). For LinkedIn: use the sender name from step 6.
+10. **Show messages to user for approval**: Display all generated texts before building the sequence
+11. **Delete existing sequence if any**: `DELETE /projects/{id}/sequence`
+12. **Build sequence in one call**: `POST /projects/{id}/sequence?force_save=true` with the full `sequence_messages` object
+13. **Verify**: `GET /sequence?project_id={id}` — show the complete sequence tree
 
 ## Deleting a Sequence
 

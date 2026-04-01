@@ -179,6 +179,8 @@ Searches LinkedIn for posts matching specific keywords.
 
 Searches for people on LinkedIn via Sales Navigator, normal LinkedIn search, or event attendees.
 
+**If the user needs to build a Sales Navigator search URL from filters (companies, titles, seniority, geography, etc.), use the `sales-nav-url-builder` skill first.** It generates valid Sales Nav URLs programmatically from natural language descriptions. Then use the generated URL as `robot_urls` input here.
+
 **URL input:** One of three types:
 - **Sales Navigator search URL** — contains `/sales/search/people`
 - **Normal LinkedIn people search URL** — contains `/search/results/people` (no `eventAttending`)
